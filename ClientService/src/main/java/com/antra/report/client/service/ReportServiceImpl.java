@@ -20,6 +20,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.ClientHttpResponse;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StreamUtils;
@@ -30,6 +31,7 @@ import java.io.*;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,11 +41,13 @@ public class ReportServiceImpl implements ReportService {
     private final ReportRequestRepo reportRequestRepo;
     private final SNSService snsService;
     private final AmazonS3 s3Client;
+    private final ThreadPoolTaskExecutor es;
 
-    public ReportServiceImpl(ReportRequestRepo reportRequestRepo, SNSService snsService, AmazonS3 s3Client) {
+    public ReportServiceImpl(ReportRequestRepo reportRequestRepo, SNSService snsService, AmazonS3 s3Client, ThreadPoolTaskExecutor es) {
         this.reportRequestRepo = reportRequestRepo;
         this.snsService = snsService;
         this.s3Client = s3Client;
+        this.es = es;
     }
 
     private ReportRequestEntity persistToLocal(ReportRequest request) {
@@ -79,8 +83,15 @@ public class ReportServiceImpl implements ReportService {
         RestTemplate rs = new RestTemplate();
         ExcelResponse excelResponse = new ExcelResponse();
         PDFResponse pdfResponse = new PDFResponse();
+        CompletableFuture<ExcelResponse> excelResponseCompletableFuture = CompletableFuture.supplyAsync(
+                ()->rs.postForEntity("http://localhost:8888/excel", request, ExcelResponse.class).getBody(),es
+        );
+        CompletableFuture<PDFResponse> pdfResponseCompletableFuture = CompletableFuture.supplyAsync(
+                ()->rs.postForEntity("http://localhost:9999/pdf", request, PDFResponse.class).getBody(),es
+        );
         try {
-            excelResponse = rs.postForEntity("http://localhost:8888/excel", request, ExcelResponse.class).getBody();
+            excelResponse = excelResponseCompletableFuture.get();
+//            excelResponse = rs.postForEntity("http://localhost:8888/excel", request, ExcelResponse.class).getBody();
         } catch(Exception e){
             log.error("Excel Generation Error (Sync) : e", e);
             excelResponse.setReqId(request.getReqId());
@@ -89,7 +100,8 @@ public class ReportServiceImpl implements ReportService {
             updateLocal(excelResponse);
         }
         try {
-            pdfResponse = rs.postForEntity("http://localhost:9999/pdf", request, PDFResponse.class).getBody();
+            pdfResponse = pdfResponseCompletableFuture.get();
+//            pdfResponse = rs.postForEntity("http://localhost:9999/pdf", request, PDFResponse.class).getBody();
         } catch(Exception e){
             log.error("PDF Generation Error (Sync) : e", e);
             pdfResponse.setReqId(request.getReqId());
@@ -164,29 +176,30 @@ public class ReportServiceImpl implements ReportService {
     @Override
     public InputStream getFileBodyByReqId(String reqId, FileType type) {
         ReportRequestEntity entity = reportRequestRepo.findById(reqId).orElseThrow(RequestNotFoundException::new);
+        String fileLocation = "";
         if (type == FileType.PDF) {
-            String fileLocation = entity.getPdfReport().getFileLocation(); // this location is s3 "bucket/key"
-            String bucket = fileLocation.split("/")[0];
-            String key = fileLocation.split("/")[1];
-            return s3Client.getObject(bucket, key).getObjectContent();
+            fileLocation = entity.getPdfReport().getFileLocation(); // this location is s3 "bucket/key"
+
         } else if (type == FileType.EXCEL) {
-            String fileId = entity.getExcelReport().getFileId();
+            fileLocation = entity.getExcelReport().getFileLocation();
 //            String fileLocation = entity.getExcelReport().getFileLocation();
 //            try {
 //                return new FileInputStream(fileLocation);// this location is in local, definitely sucks
 //            } catch (FileNotFoundException e) {
 //                log.error("No file found", e);
 //            }
-            RestTemplate restTemplate = new RestTemplate();
+//            RestTemplate restTemplate = new RestTemplate();
 //            InputStream is = restTemplate.execute(, HttpMethod.GET, null, ClientHttpResponse::getBody, fileId);
-            ResponseEntity<Resource> exchange = restTemplate.exchange("http://localhost:8888/excel/{id}/content",
-                    HttpMethod.GET, null, Resource.class, fileId);
-            try {
-                return exchange.getBody().getInputStream();
-            } catch (IOException e) {
-                log.error("Cannot download excel",e);
-            }
+//            ResponseEntity<Resource> exchange = restTemplate.exchange("http://localhost:8888/excel/{id}/content",
+//                    HttpMethod.GET, null, Resource.class, fileId);
+//            try {
+//                return exchange.getBody().getInputStream();
+//            } catch (IOException e) {
+//                log.error("Cannot download excel",e);
+//            }
         }
-        return null;
+        String bucket = fileLocation.split("/")[0];
+        String key = fileLocation.split("/")[1];
+        return s3Client.getObject(bucket, key).getObjectContent();
     }
 }

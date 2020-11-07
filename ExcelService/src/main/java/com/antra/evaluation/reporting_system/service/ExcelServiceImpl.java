@@ -1,5 +1,6 @@
 package com.antra.evaluation.reporting_system.service;
 
+import com.amazonaws.services.s3.AmazonS3;
 import com.antra.evaluation.reporting_system.exception.FileGenerationException;
 import com.antra.evaluation.reporting_system.pojo.api.ExcelRequest;
 import com.antra.evaluation.reporting_system.pojo.api.MultiSheetExcelRequest;
@@ -11,6 +12,7 @@ import com.antra.evaluation.reporting_system.repo.ExcelRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.*;
@@ -27,10 +29,16 @@ public class ExcelServiceImpl implements ExcelService {
 
     private ExcelGenerationService excelGenerationService;
 
+    private final AmazonS3 s3Client;
+
+    @Value("${s3.bucket}")
+    private String s3Bucket;
+
     @Autowired
-    public ExcelServiceImpl(ExcelRepository excelRepository, ExcelGenerationService excelGenerationService) {
+    public ExcelServiceImpl(ExcelRepository excelRepository, ExcelGenerationService excelGenerationService, AmazonS3 s3Client) {
         this.excelRepository = excelRepository;
         this.excelGenerationService = excelGenerationService;
+        this.s3Client = s3Client;
     }
 
     @Override
@@ -42,7 +50,7 @@ public class ExcelServiceImpl implements ExcelService {
     @Override
     public ExcelFile generateFile(ExcelRequest request, boolean multisheet) {
         ExcelFile fileInfo = new ExcelFile();
-        fileInfo.setFileId(UUID.randomUUID().toString());
+        fileInfo.setFileId("ExcelFile-" + UUID.randomUUID().toString());
         ExcelData data = new ExcelData();
         data.setTitle(request.getDescription());
         data.setFileId(fileInfo.getFileId());
@@ -54,12 +62,15 @@ public class ExcelServiceImpl implements ExcelService {
         }
         try {
             File generatedFile = excelGenerationService.generateExcelReport(data);
-            fileInfo.setFileLocation(generatedFile.getAbsolutePath());
             fileInfo.setFileName(generatedFile.getName());
             fileInfo.setGeneratedTime(LocalDateTime.now());
             fileInfo.setSubmitter(request.getSubmitter());
             fileInfo.setFileSize(generatedFile.length());
             fileInfo.setDescription(request.getDescription());
+            log.debug("Upload generatedFile to s3{}", generatedFile.getAbsolutePath());
+            s3Client.putObject(s3Bucket, fileInfo.getFileId(), generatedFile);
+            fileInfo.setFileLocation(String.join("/",s3Bucket,fileInfo.getFileId()));
+            log.debug("Uploaded");
         } catch (IOException e) {
 //            log.error("Error in generateFile()", e);
             throw new FileGenerationException(e);
