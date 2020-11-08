@@ -13,6 +13,6 @@
         <module>ExcelService</module>
         <module>PDFService</module>
         <module>ClientService</module>
-        <module>DiscoveryService</module>
+        <module>DiscoverService</module>
     </modules>
 </project>
