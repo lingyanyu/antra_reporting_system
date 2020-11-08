@@ -17,8 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeanUtils;
 import org.springframework.core.io.Resource;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
+import org.springframework.http.*;
 import org.springframework.http.client.ClientHttpResponse;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
@@ -42,12 +41,14 @@ public class ReportServiceImpl implements ReportService {
     private final SNSService snsService;
     private final AmazonS3 s3Client;
     private final ThreadPoolTaskExecutor es;
+    private final RestTemplate rs;
 
-    public ReportServiceImpl(ReportRequestRepo reportRequestRepo, SNSService snsService, AmazonS3 s3Client, ThreadPoolTaskExecutor es) {
+    public ReportServiceImpl(ReportRequestRepo reportRequestRepo, SNSService snsService, AmazonS3 s3Client, ThreadPoolTaskExecutor es, RestTemplate rs) {
         this.reportRequestRepo = reportRequestRepo;
         this.snsService = snsService;
         this.s3Client = s3Client;
         this.es = es;
+        this.rs = rs;
     }
 
     private ReportRequestEntity persistToLocal(ReportRequest request) {
@@ -80,14 +81,16 @@ public class ReportServiceImpl implements ReportService {
     }
     //TODO:Change to parallel process using Threadpool? CompletableFuture?
     private void sendDirectRequests(ReportRequest request) {
-        RestTemplate rs = new RestTemplate();
         ExcelResponse excelResponse = new ExcelResponse();
         PDFResponse pdfResponse = new PDFResponse();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<ReportRequest> httpEntity = new HttpEntity<>(request, headers);
         CompletableFuture<ExcelResponse> excelResponseCompletableFuture = CompletableFuture.supplyAsync(
-                ()->rs.postForEntity("http://localhost:8888/excel", request, ExcelResponse.class).getBody(),es
+                ()->rs.postForEntity("http://ExcelService/excel", httpEntity, ExcelResponse.class).getBody(),es
         );
         CompletableFuture<PDFResponse> pdfResponseCompletableFuture = CompletableFuture.supplyAsync(
-                ()->rs.postForEntity("http://localhost:9999/pdf", request, PDFResponse.class).getBody(),es
+                ()->rs.postForEntity("http://PDFService/pdf", httpEntity, PDFResponse.class).getBody(),es
         );
         try {
             excelResponse = excelResponseCompletableFuture.get();
