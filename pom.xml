@@ -14,5 +14,6 @@
         <module>PDFService</module>
         <module>ClientService</module>
         <module>DiscoverService</module>
+        <module>CSVService</module>
     </modules>
 </project>
