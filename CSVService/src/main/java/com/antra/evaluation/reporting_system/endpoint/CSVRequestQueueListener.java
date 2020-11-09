@@ -54,6 +54,6 @@ public class CSVRequestQueueListener {
     }
 
     private void send(Object message) {
-        queueMessagingTemplate.convertAndSend("PDF_Response_Queue", message);
+        queueMessagingTemplate.convertAndSend("CSV_Response_Queue", message);
     }
 }

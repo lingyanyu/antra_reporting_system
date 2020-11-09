@@ -36,7 +36,7 @@ public class CSVServiceImpl implements CSVService {
     @Override
     public CSVFile createCSV(final CSVRequest request) {
         CSVFile file = new CSVFile();
-        file.setId("File-" + UUID.randomUUID().toString());
+        file.setId("CSVFile-" + UUID.randomUUID().toString());
         file.setSubmitter(request.getSubmitter());
         file.setDescription(request.getDescription());
         file.setGeneratedTime(LocalDateTime.now());

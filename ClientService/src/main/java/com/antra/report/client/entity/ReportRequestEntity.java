@@ -18,6 +18,17 @@ public class ReportRequestEntity {
     @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.EAGER) // default is already eager here
     @JoinColumn(name="excel_report_id")
     private ExcelReportEntity excelReport;
+    @OneToOne(cascade = {CascadeType.PERSIST, CascadeType.MERGE, CascadeType.REMOVE}, fetch = FetchType.EAGER) // default is already eager here
+    @JoinColumn(name="csv_report_id")
+    private CSVReportEntity csvReport;
+
+    public CSVReportEntity getCsvReport() {
+        return csvReport;
+    }
+
+    public void setCsvReport(CSVReportEntity csvReport) {
+        this.csvReport = csvReport;
+    }
 
     public PDFReportEntity getPdfReport() {
         return pdfReport;

@@ -32,6 +32,13 @@ public class ReportSQSListener {
         reportService.updateAsyncExcelReport(response);
     }
 
+    @SqsListener("CSV_Response_Queue")
+    public void responseQueueListenerCsv(SqsResponse response) {
+        log.info("Get response from sqs : {}", response);
+        //queueListener(request.getPdfRequest());
+        reportService.updateAsyncCSVReport(response);
+    }
+
 //    @SqsListener(value = "Excel_Response_Queue", deletionPolicy = SqsMessageDeletionPolicy.NEVER)
 //    public void responseQueueListenerExcelManualAcknowledge(SqsResponse response, Acknowledgment ack) {
 //        log.info("Get response from sqs : {}", response);

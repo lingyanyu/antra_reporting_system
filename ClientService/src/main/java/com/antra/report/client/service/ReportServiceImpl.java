@@ -1,16 +1,10 @@
 package com.antra.report.client.service;
 
 import com.amazonaws.services.s3.AmazonS3;
-import com.antra.report.client.entity.ExcelReportEntity;
-import com.antra.report.client.entity.PDFReportEntity;
-import com.antra.report.client.entity.ReportRequestEntity;
-import com.antra.report.client.entity.ReportStatus;
+import com.antra.report.client.entity.*;
 import com.antra.report.client.exception.RequestNotFoundException;
 import com.antra.report.client.pojo.FileType;
-import com.antra.report.client.pojo.reponse.ExcelResponse;
-import com.antra.report.client.pojo.reponse.PDFResponse;
-import com.antra.report.client.pojo.reponse.ReportVO;
-import com.antra.report.client.pojo.reponse.SqsResponse;
+import com.antra.report.client.pojo.reponse.*;
 import com.antra.report.client.pojo.request.ReportRequest;
 import com.antra.report.client.repository.ReportRequestRepo;
 import org.slf4j.Logger;
@@ -70,6 +64,10 @@ public class ReportServiceImpl implements ReportService {
         BeanUtils.copyProperties(pdfReport, excelReport);
         entity.setExcelReport(excelReport);
 
+        CSVReportEntity csvReport = new CSVReportEntity();
+        BeanUtils.copyProperties(pdfReport, csvReport);
+        entity.setCsvReport(csvReport);
+
         return reportRequestRepo.save(entity);
     }
 
@@ -83,6 +81,7 @@ public class ReportServiceImpl implements ReportService {
     private void sendDirectRequests(ReportRequest request) {
         ExcelResponse excelResponse = new ExcelResponse();
         PDFResponse pdfResponse = new PDFResponse();
+        CSVResponse csvResponse = new CSVResponse();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<ReportRequest> httpEntity = new HttpEntity<>(request, headers);
@@ -92,6 +91,11 @@ public class ReportServiceImpl implements ReportService {
         CompletableFuture<PDFResponse> pdfResponseCompletableFuture = CompletableFuture.supplyAsync(
                 ()->rs.postForEntity("http://PDFService/pdf", httpEntity, PDFResponse.class).getBody(),es
         );
+
+        CompletableFuture<CSVResponse> csvResponseCompletableFuture = CompletableFuture.supplyAsync(
+                ()->rs.postForEntity("http://CSVService/csv", httpEntity, CSVResponse.class).getBody(),es
+        );
+
         try {
             excelResponse = excelResponseCompletableFuture.get();
 //            excelResponse = rs.postForEntity("http://localhost:8888/excel", request, ExcelResponse.class).getBody();
@@ -112,6 +116,18 @@ public class ReportServiceImpl implements ReportService {
         } finally {
             updateLocal(pdfResponse);
         }
+
+        try{
+            csvResponse = csvResponseCompletableFuture.get();
+        }
+        catch (Exception e){
+            log.error("CSV Generation Error (Sync) : e", e);
+            csvResponse.setFailed(true);
+            csvResponse.setReqId(request.getReqId());
+        }
+        finally {
+            updateLocal(csvResponse);
+        }
     }
 
     private void updateLocal(ExcelResponse excelResponse) {
@@ -122,6 +138,12 @@ public class ReportServiceImpl implements ReportService {
     private void updateLocal(PDFResponse pdfResponse) {
         SqsResponse response = new SqsResponse();
         BeanUtils.copyProperties(pdfResponse, response);
+        updateAsyncPDFReport(response);
+    }
+
+    private void updateLocal(CSVResponse csvResponse) {
+        SqsResponse response = new SqsResponse();
+        BeanUtils.copyProperties(csvResponse, response);
         updateAsyncPDFReport(response);
     }
 
@@ -171,6 +193,24 @@ public class ReportServiceImpl implements ReportService {
     }
 
     @Override
+    @Transactional
+    public void updateAsyncCSVReport(SqsResponse response) {
+        ReportRequestEntity entity = reportRequestRepo.findById(response.getReqId()).orElseThrow(RequestNotFoundException::new);
+        var csvReport = entity.getCsvReport();
+        csvReport.setUpdatedTime(LocalDateTime.now());
+        if (response.isFailed()) {
+            csvReport.setStatus(ReportStatus.FAILED);
+        } else{
+            csvReport.setStatus(ReportStatus.COMPLETED);
+            csvReport.setFileId(response.getFileId());
+            csvReport.setFileLocation(response.getFileLocation());
+            csvReport.setFileSize(response.getFileSize());
+        }
+        entity.setUpdatedTime(LocalDateTime.now());
+        reportRequestRepo.save(entity);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<ReportVO> getReportList() {
         return reportRequestRepo.findAll().stream().map(ReportVO::new).collect(Collectors.toList());
@@ -200,6 +240,9 @@ public class ReportServiceImpl implements ReportService {
 //            } catch (IOException e) {
 //                log.error("Cannot download excel",e);
 //            }
+        }
+        else if(type == FileType.CSV){
+            fileLocation = entity.getCsvReport().getFileLocation();
         }
         String bucket = fileLocation.split("/")[0];
         String key = fileLocation.split("/")[1];

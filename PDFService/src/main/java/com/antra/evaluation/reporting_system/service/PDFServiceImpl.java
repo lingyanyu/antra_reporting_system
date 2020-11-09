@@ -36,7 +36,7 @@ public class PDFServiceImpl implements PDFService {
     @Override
     public PDFFile createPDF(final PDFRequest request) {
         PDFFile file = new PDFFile();
-        file.setId("File-" + UUID.randomUUID().toString());
+        file.setId("PDFFile-" + UUID.randomUUID().toString());
         file.setSubmitter(request.getSubmitter());
         file.setDescription(request.getDescription());
         file.setGeneratedTime(LocalDateTime.now());
